@@ -8,5 +8,5 @@ candidates_csv_file = twitter_data_directory + r'account_info.csv'
 
 stopwords = stopwords.words('spanish')
 
-num_candidates = 5
-tweet_fraction = 0.1
+num_candidates = 10
+tweet_fraction = 1

@@ -1,6 +1,7 @@
 from config import *
 import pandas as pd
 import numpy as np
+import os
 from math import log
 from matplotlib import pyplot as plt
 from unidecode import unidecode
@@ -14,6 +15,8 @@ from pdfminer.pdfparser import PDFParser
 
 
 def euclidean_distance(vec1, vec2):
+    assert len(vec1) == len(vec2)
+
     norm1 = np.linalg.norm(vec1)
     norm2 = np.linalg.norm(vec2)
     normalized_1 = [0 for i in range(len(vec1))]
@@ -30,7 +33,8 @@ def euclidean_distance(vec1, vec2):
 def vectorize(vocabulary, tokenized, tf_idf, tweet_id=None, num_documents=0):
     vector = [0 for i in range(len(vocabulary))]
     for word in tokenized:
-        if word not in vocabulary: continue
+        if word not in vocabulary:
+            continue
         idx = vocabulary.index(word)
         if tweet_id:
             tf_idf_ = tf_idf[tf_idf['tweet_id'] == tweet_id]
@@ -60,11 +64,21 @@ def tokenize(text):
     return words
 
 
-def top_candidates(df):
+def top_candidates(df, only_manifestos):
     candidates_usernames = pd.read_csv(candidates_csv_file)['twitter_screen_name']
     candidates_lastnames = pd.read_csv(candidates_csv_file)['apellidos']
     candidates_lastnames = {u: unidecode(s.split()[0]).lower() for u, s in
                             zip(candidates_usernames, candidates_lastnames)}
+
+    if only_manifestos:
+        candidates_lastnames_to_users = {ln: u for u, ln in candidates_lastnames.items()}
+
+        existing_manifestos_usernames = []
+        for file in os.listdir(manifesto_data_directory):
+            lastname = file.split('.')[0]
+            existing_manifestos_usernames.append(candidates_lastnames_to_users[lastname])
+
+        candidates_usernames = candidates_usernames[candidates_usernames.isin(existing_manifestos_usernames)]
 
     candidates_tweets = df[df['tweet_screen_name'].isin(candidates_usernames)].sample(frac=tweet_fraction)
     # mentioned_tweets = df[df['tweet_text'].map(lambda x: any(y in x for y in candidates_usernames))]
@@ -130,7 +144,7 @@ def top_words(candidates_tweets):
                  'tf-idf': tf_idf_},
                 ignore_index=True)
 
-    return top, tf_idf, list(sorted(vocabulary.keys()))
+    return top, tf_idf, list(sorted(vocabulary.keys())), top_words_set
 
 
 def time_line(candidates_words, candidates_tweets):
@@ -195,19 +209,18 @@ def ranking(query, vocabulary, candidates_tweets, tf_idf):
     return tweet_total_vectors
 
 
-def similarity(tweet_total_vectors):
-    similarities = pd.DataFrame(columns=list(tweet_total_vectors.keys()), index=list(tweet_total_vectors.keys()))
+def similarity(total_user_vectors):
+    similarities = pd.DataFrame(columns=list(total_user_vectors.keys()), index=list(total_user_vectors.keys()))
 
-    for user_1, vec_1 in tweet_total_vectors.items():
-        for user_2, vec_2 in tweet_total_vectors.items():
+    for user_1, vec_1 in total_user_vectors.items():
+        for user_2, vec_2 in total_user_vectors.items():
             sim = euclidean_distance(vec_1, vec_2)
             similarities.loc[user_1][user_2] = sim
 
     return similarities
 
 
-def deviation(candidates_words, candidates_lastnames, total_user_vectors):
-
+def deviation(candidates_words, candidates_lastnames, vocabulary, candidates_tweets, total_user_vectors, tf_idf):
     manifesto_vectors = {}
     for user in candidates_words.keys():
         lastname = candidates_lastnames[user]
@@ -227,6 +240,32 @@ def deviation(candidates_words, candidates_lastnames, total_user_vectors):
 
             text = output_string.getvalue().replace('•', ' ').replace('\n', ' ').replace('\x0c', ' ')
             #########################################################################
-            # Code copied from pdfminer.six documentation: https://pdfminersix.readthedocs.io/en/latest/tutorial/composable.html
-        except:
+            # Code copied from pdfminer.six documentation:
+            # https://pdfminersix.readthedocs.io/en/latest/tutorial/composable.html
+
+            manifesto_vectors[user] = vectorize(vocabulary, tokenize(text), tf_idf, num_documents=len(candidates_tweets))
+
+
+        except Exception as e:
             print(f'Manifesto for {lastname} not found.')
+
+    deviations = {}
+    for user, manifesto_vector in manifesto_vectors.items():
+        manifesto_vector_reduced = []
+        tweet_total_vector_reduced = []
+        for word in candidates_words[user]:
+            idx = vocabulary.index(word)
+            manifesto_vector_reduced.append(manifesto_vector[idx])
+            tweet_total_vector_reduced.append(total_user_vectors[user][idx])
+
+        deviations[user] = euclidean_distance(manifesto_vector_reduced, tweet_total_vector_reduced)
+
+    plt.figure()
+    plt.bar(deviations.keys(), deviations.values())
+    plt.title('Euclidean distance of reduced vocabulary vectors of tweets vs. manifestos')
+    plt.xlabel('Candidates')
+    plt.ylabel('Euclidean distance')
+    plt.xticks(rotation=60)
+    plt.show()
+
+
