@@ -243,7 +243,8 @@ def deviation(candidates_words, candidates_lastnames, vocabulary, candidates_twe
             # Code copied from pdfminer.six documentation:
             # https://pdfminersix.readthedocs.io/en/latest/tutorial/composable.html
 
-            manifesto_vectors[user] = vectorize(vocabulary, tokenize(text), tf_idf, num_documents=len(candidates_tweets))
+            manifesto_vectors[user] = vectorize(vocabulary, tokenize(text), tf_idf,
+                                                num_documents=len(candidates_tweets))
 
 
         except Exception as e:
@@ -267,5 +268,4 @@ def deviation(candidates_words, candidates_lastnames, vocabulary, candidates_twe
     plt.ylabel('Euclidean distance')
     plt.xticks(rotation=60)
     plt.show()
-
 
